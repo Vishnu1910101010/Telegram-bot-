@@ -1,4 +1,3 @@
-
 import subprocess
 import sys
 import logging
@@ -191,17 +190,14 @@ async def skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not waiting_users:
             waiting_users.append(user_id)
             await update.message.reply_text(
-                '⏳ No new chat partner is available at the moment. Please wait for someone to start a chat.')
+                '⏳ No new chat partner is available at the moment. Please wait for someone to start a chat.'
+            )
         else:
-            await start(update, context)
-
-        # Show /next and /rematch commands
-        keyboard = [
-            [InlineKeyboardButton("/next", callback_data='next')],
-            [InlineKeyboardButton("/rematch", callback_data='rematch')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text('You can use the following commands:', reply_markup=reply_markup)
+            await update.message.reply_text(
+                'You have been removed from the current chat. Use the following commands to proceed:\n'
+                '/next - Find a new chat partner\n'
+                '/rematch - Request a rematch with your last partner'
+            )
 
     elif user_id in waiting_users:
         await update.message.reply_text('You are already waiting for a new chat.')
@@ -228,46 +224,52 @@ async def rematch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         last_partner.pop(partner_id, None)
         active_chats[user_id] = partner_id
         active_chats[partner_id] = user_id
-        await context.bot.send_message(chat_id=partner_id, text='Your partner has accepted the rematch request. You are now connected. 🎉')
-        await update.message.reply_text('You are now reconnected with your last partner. 🎉')
+        await context.bot.send_message(chat_id=partner_id, text='Your partner has accepted the rematch request. You are now reconnected! 🎉')
+        await update.message.reply_text('Rematch accepted! You are now reconnected with your partner. 🎉')
+    else:
+        await update.message.reply_text('You have not requested a rematch. Use /rematch to request one.')
 
-# Next command
-async def next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await skip(update, context)  # Reuse the skip function
-
-# Share Usernames command
+# Share usernames command
 async def share_usernames(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.message.chat_id
-    if user_id in user_ids:
-        username = user_ids[user_id]
-        await update.message.reply_text(f'Your username is: @{username}')
-    else:
-        await update.message.reply_text('Your username is not set. Use /start to set it.')
 
-# Handle non-command messages
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.message.chat_id
     if user_id in active_chats:
         partner_id = active_chats[user_id]
-        text = update.message.text
-        await context.bot.send_message(chat_id=partner_id, text=text)
-        # Log the message
-        log_conversation(user_id, partner_id, text)
+        user_name = update.message.from_user.username
+        if user_name:
+            await context.bot.send_message(chat_id=partner_id, text=f'Your partner has shared their username: @{user_name} 📤')
+            await update.message.reply_text('You have shared your username with your chat partner. 📤')
+        else:
+            await update.message.reply_text('You do not have a username set up in Telegram. Please create one to share. 🚫')
+    else:
+        await update.message.reply_text('You are not in a chat. Use /start to connect with a partner.')
 
-def main() -> None:
+# Message handler
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.message.chat_id
+
+    if user_id in active_chats:
+        partner_id = active_chats[user_id]
+        message = update.message.text
+        await context.bot.send_message(chat_id=partner_id, text=message)
+        log_conversation(user_id, partner_id, message)
+    else:
+        await update.message.reply_text('You are not in a chat. Use /start to connect with a partner.')
+
+# Main function to run the bot
+def main():
     application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(button))
     application.add_handler(CommandHandler('stop', stop))
     application.add_handler(CommandHandler('skip', skip))
     application.add_handler(CommandHandler('rematch', rematch))
-    application.add_handler(CommandHandler('next', next))  # Add /next command handler
-    application.add_handler(CommandHandler('share_usernames', share_usernames))  # Add /share_usernames command handler
-
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler('share_usernames', share_usernames))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     application.run_polling()
 
 if __name__ == '__main__':
     main()
+                
